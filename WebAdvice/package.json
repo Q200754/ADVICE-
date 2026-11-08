@@ -1,0 +1,17 @@
+{
+  "name": "advice-angthong-tile-game",
+  "version": "1.0.0",
+  "description": "เกมเปิดแผ่นป้ายทายภาพ 35 ป้าย สำหรับร้าน ADVICE อ่างทอง ถ่ายทำคอนเทนต์ TikTok & Reels",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "advice",
+    "game",
+    "tiktok",
+    "reels"
+  ],
+  "author": "ADVICE อ่างทอง",
+  "license": "MIT"
+}
