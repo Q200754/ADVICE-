@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "เกมเปิดแผ่นป้ายทายภาพ 35 ป้าย สำหรับร้าน ADVICE อ่างทอง ถ่ายทำคอนเทนต์ TikTok & Reels",
-  "scripts": {},
+  "scripts": {
+    "start": "node server.js"
+  },
   "keywords": [
     "advice",
     "game",
