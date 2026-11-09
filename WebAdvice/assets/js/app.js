@@ -8,81 +8,159 @@ class AdviceMysteryGame {
     this.totalTiles = 35;
     this.tileStates = new Array(this.totalTiles).fill(false);
     this.currentAnswerImage = null;
-    this.tempPreviewImage   = null;
+    this.tempPreviewImage = null;
+
+    // จัดการ Timer ป้องกันคำสั่งซ้อนกัน
+    this.operationId = 0;
+    this.pendingTimers = new Set();
+    this._toastTimeout = null;
 
     // DOM refs
-    this.tilesGrid        = document.getElementById('tilesGrid');
-    this.answerImage      = document.getElementById('answerImage');
-    this.openedCountElem  = document.getElementById('openedCount');
-    this.uploadModal      = document.getElementById('uploadModal');
-    this.modalPreviewImg  = document.getElementById('modalPreviewImg');
-    this.toastMsg         = document.getElementById('toastMsg');
-    this.toastText        = document.getElementById('toastText');
-    this.toastIcon        = document.getElementById('toastIcon');
-    this.confettiCanvas   = document.getElementById('confettiCanvas');
-    this.confettiCtx      = this.confettiCanvas.getContext('2d');
+    this.tilesGrid = document.getElementById('tilesGrid');
+    this.answerImage = document.getElementById('answerImage');
+    this.openedCountElem = document.getElementById('openedCount');
+    this.uploadModal = document.getElementById('uploadModal');
+    this.modalPreviewImg = document.getElementById('modalPreviewImg');
+    this.toastMsg = document.getElementById('toastMsg');
+    this.toastText = document.getElementById('toastText');
+    this.toastIcon = document.getElementById('toastIcon');
+    this.confettiCanvas = document.getElementById('confettiCanvas');
+    this.confettiCtx = this.confettiCanvas
+      ? this.confettiCanvas.getContext('2d')
+      : null;
+
     this.confettiParticles = [];
     this.isConfettiRunning = false;
 
     this.init();
   }
 
+  // ══════════════════════════════════════════════════
+  // TIMER MANAGEMENT
+  // ══════════════════════════════════════════════════
+
+  cancelPendingOperations() {
+    this.operationId++;
+
+    this.pendingTimers.forEach(timer => clearTimeout(timer));
+    this.pendingTimers.clear();
+
+    return this.operationId;
+  }
+
+  safeTimeout(callback, delay, operationId = this.operationId) {
+    const timer = setTimeout(() => {
+      this.pendingTimers.delete(timer);
+
+      if (operationId !== this.operationId) return;
+
+      callback();
+    }, delay);
+
+    this.pendingTimers.add(timer);
+    return timer;
+  }
+
+  playSound(method, ...args) {
+    if (
+      window.soundEngine &&
+      typeof window.soundEngine[method] === 'function'
+    ) {
+      window.soundEngine[method](...args);
+    }
+  }
+
+  // ══════════════════════════════════════════════════
+  // INITIALIZE
+  // ══════════════════════════════════════════════════
+
   async init() {
     this.setupConfettiCanvas();
     this.bindEvents();
+
     await this.loadAnswerImage();
+
     this.renderTiles();
     this.updateCounter();
 
     // Unlock Web Audio on first gesture
     const unlockAudio = () => {
-      window.soundEngine.init();
-      window.removeEventListener('pointerdown', unlockAudio);
-      window.removeEventListener('keydown',     unlockAudio);
-    };
-    window.addEventListener('pointerdown', unlockAudio);
-    window.addEventListener('keydown',     unlockAudio);
+      if (window.soundEngine && typeof window.soundEngine.init === 'function') {
+        window.soundEngine.init();
+      }
 
-    // Apply saved sound state to button styling
-    this._refreshSoundBtn(true);
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+
+    window.addEventListener('pointerdown', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
+    this._refreshSoundBtn(
+      window.soundEngine ? window.soundEngine.enabled !== false : true
+    );
   }
 
   // ══════════════════════════════════════════════════
   // LOAD & SAVE ANSWER IMAGE
   // ══════════════════════════════════════════════════
+
   async loadAnswerImage() {
-    const saved = await window.imageStorage.getMysteryImage();
-    this.currentAnswerImage = saved || window.DEFAULT_MYSTERY_IMAGE;
+    let saved = null;
+
+    try {
+      if (
+        window.imageStorage &&
+        typeof window.imageStorage.getMysteryImage === 'function'
+      ) {
+        saved = await window.imageStorage.getMysteryImage();
+      }
+    } catch (err) {
+      console.error('ไม่สามารถโหลดรูปภาพที่บันทึกไว้ได้:', err);
+    }
+
+    this.currentAnswerImage =
+      saved || window.DEFAULT_MYSTERY_IMAGE || '';
 
     const fitMode = localStorage.getItem('advice_image_fit') || 'cover';
-    this.answerImage.style.objectFit = fitMode;
 
-    const fitCoverRadio   = document.getElementById('fitCover');
+    if (this.answerImage) {
+      this.answerImage.style.objectFit = fitMode;
+      this.answerImage.src = this.currentAnswerImage;
+    }
+
+    const fitCoverRadio = document.getElementById('fitCover');
     const fitContainRadio = document.getElementById('fitContain');
+
     if (fitCoverRadio && fitContainRadio) {
       (fitMode === 'contain' ? fitContainRadio : fitCoverRadio).checked = true;
     }
 
-    this.answerImage.src = this.currentAnswerImage;
-    if (this.modalPreviewImg) this.modalPreviewImg.src = this.currentAnswerImage;
+    if (this.modalPreviewImg) {
+      this.modalPreviewImg.src = this.currentAnswerImage;
+    }
   }
 
   // ══════════════════════════════════════════════════
   // RENDER 35 TILES
   // ══════════════════════════════════════════════════
+
   renderTiles() {
+    if (!this.tilesGrid) return;
+
     this.tilesGrid.innerHTML = '';
 
     for (let i = 1; i <= this.totalTiles; i++) {
       const tile = document.createElement('div');
-      tile.className  = `tile-item${this.tileStates[i - 1] ? ' opened' : ''}`;
-      tile.id         = `tile-${i}`;
+
+      tile.className = `tile-item${this.tileStates[i - 1] ? ' opened' : ''}`;
+      tile.id = `tile-${i}`;
       tile.dataset.number = i;
+
       tile.setAttribute('tabindex', '0');
       tile.setAttribute('role', 'button');
       tile.setAttribute('aria-label', `แผ่นป้ายที่ ${i}`);
 
-      // CSS custom property for staggered shimmer animation
       tile.style.setProperty('--tile-i', i);
 
       tile.innerHTML = `
@@ -92,8 +170,11 @@ class AdviceMysteryGame {
         <span class="tile-number">${i}</span>
       `;
 
-      tile.addEventListener('click',   ()  => this.openTile(i - 1));
-      tile.addEventListener('keydown', (e) => {
+      tile.addEventListener('click', () => {
+        this.openTile(i - 1);
+      });
+
+      tile.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           this.openTile(i - 1);
@@ -105,60 +186,70 @@ class AdviceMysteryGame {
   }
 
   // ══════════════════════════════════════════════════
-  // OPEN A TILE (เปิดแล้วเปิดเลย — ไม่มีปิดกลับ)
+  // OPEN A TILE
   // ══════════════════════════════════════════════════
+
   openTile(index) {
-    if (this.tileStates[index]) return; // already open
+    if (index < 0 || index >= this.totalTiles) return;
+    if (this.tileStates[index]) return;
 
     this.tileStates[index] = true;
+
     const tileElem = document.getElementById(`tile-${index + 1}`);
 
     if (tileElem) {
-      // Burst flash → disappear (380ms animation + 20ms buffer = 400ms)
       tileElem.classList.add('opening');
-      setTimeout(() => {
+
+      this.safeTimeout(() => {
         tileElem.classList.remove('opening');
         tileElem.classList.add('opened');
       }, 400);
-
-      window.soundEngine.playFlip();
-      window.soundEngine.playChime(1 + (index % 7) * 0.08);
     }
 
-    this.updateCounter(true); // bump=true when opening
+    this.playSound('playFlip');
+    this.playSound('playChime', 1 + (index % 7) * 0.08);
 
-    // All 35 opened → celebration!
+    this.updateCounter(true);
+
     const opened = this.tileStates.filter(Boolean).length;
+
     if (opened === this.totalTiles) {
-      setTimeout(() => {
-        window.soundEngine.playFanfare();
+      const currentOperation = this.operationId;
+
+      this.safeTimeout(() => {
+        this.playSound('playFanfare');
         this.triggerConfetti();
         this.showToast('🎉 เฉลยครบทั้ง 35 ป้ายแล้ว!', '🏆');
-      }, 500);
+      }, 500, currentOperation);
     }
   }
 
+  // ══════════════════════════════════════════════════
+  // UPDATE COUNTER
+  // ══════════════════════════════════════════════════
+
   updateCounter(bump = false) {
     const opened = this.tileStates.filter(Boolean).length;
-    if (!this.openedCountElem) return;
 
-    this.openedCountElem.textContent = opened;
+    if (this.openedCountElem) {
+      this.openedCountElem.textContent = opened;
 
-    // Bump animation only when a tile is actually opened (not on reset/hide)
-    if (bump) {
-      this.openedCountElem.classList.remove('bump');
-      void this.openedCountElem.offsetWidth; // force reflow to restart animation
-      this.openedCountElem.classList.add('bump');
-    } else {
-      this.openedCountElem.classList.remove('bump');
+      if (bump) {
+        this.openedCountElem.classList.remove('bump');
+        void this.openedCountElem.offsetWidth;
+        this.openedCountElem.classList.add('bump');
+      } else {
+        this.openedCountElem.classList.remove('bump');
+      }
     }
 
-    // Update progress bar
     const pct = (opened / this.totalTiles) * 100;
     const bar = document.getElementById('progressFill');
+
     if (bar) {
       bar.style.width = pct + '%';
       bar.style.opacity = opened === 0 ? '0' : '1';
+
       if (opened === this.totalTiles) {
         bar.classList.add('complete');
       } else {
@@ -173,104 +264,149 @@ class AdviceMysteryGame {
 
   // Reset — close all tiles
   resetGame() {
-    window.soundEngine.playWhoosh();
+    const operationId = this.cancelPendingOperations();
+
+    this.playSound('playWhoosh');
     this.tileStates.fill(false);
 
     const tiles = document.querySelectorAll('.tile-item');
+
     tiles.forEach((tile, i) => {
-      setTimeout(() => {
+      this.safeTimeout(() => {
         tile.classList.remove('opened', 'opening', 'picking');
-      }, i * 12);
+      }, i * 12, operationId);
     });
 
-    this.updateCounter(false); // no bump on reset
+    this.updateCounter(false);
+
     this.showToast('เริ่มเกมใหม่แล้ว ปิดป้ายทั้ง 35 ช่อง', '🔄');
   }
 
   // Random pick 1 closed tile
   pickRandomTile() {
     const closed = this.tileStates
-      .map((v, i) => (!v ? i : -1))
-      .filter(i => i !== -1);
+      .map((value, index) => (!value ? index : -1))
+      .filter(index => index !== -1);
 
     if (closed.length === 0) {
       this.showToast('เปิดครบทั้ง 35 ป้ายแล้วครับ!', '🎯');
       return;
     }
 
-    const idx     = closed[Math.floor(Math.random() * closed.length)];
+    const idx = closed[Math.floor(Math.random() * closed.length)];
     const tileNum = idx + 1;
-    const tileEl  = document.getElementById(`tile-${tileNum}`);
+    const tileEl = document.getElementById(`tile-${tileNum}`);
 
-    window.soundEngine.playDrumroll();
+    const operationId = this.operationId;
+
+    this.playSound('playDrumroll');
 
     if (tileEl) {
       tileEl.classList.add('picking');
-      setTimeout(() => {
+
+      this.safeTimeout(() => {
         tileEl.classList.remove('picking');
+
         this.openTile(idx);
         this.showToast(`🎲 สุ่มเปิดป้ายที่ ${tileNum}!`, '🎉');
-      }, 600);
+      }, 600, operationId);
     } else {
       this.openTile(idx);
     }
   }
 
-  // Reveal all tiles (wave cascade)
+  // Reveal all tiles
   revealAll() {
-    window.soundEngine.playWhoosh();
+    const operationId = this.cancelPendingOperations();
+
+    this.playSound('playWhoosh');
 
     let delay = 0;
+
     for (let i = 0; i < this.totalTiles; i++) {
       if (this.tileStates[i]) continue;
+
       this.tileStates[i] = true;
 
       const capturedDelay = delay;
-      const capturedI = i;
-      setTimeout(() => {
-        const tileEl = document.getElementById(`tile-${capturedI + 1}`);
+      const capturedIndex = i;
+
+      this.safeTimeout(() => {
+        const tileEl = document.getElementById(
+          `tile-${capturedIndex + 1}`
+        );
+
         if (!tileEl) return;
+
         tileEl.classList.add('opening');
-        setTimeout(() => {
+
+        this.safeTimeout(() => {
           tileEl.classList.remove('opening');
           tileEl.classList.add('opened');
-          if (capturedI % 6 === 0) window.soundEngine.playChime(1 + (capturedI % 7) * 0.1);
-        }, 400);
-      }, capturedDelay * 35);
+
+          if (capturedIndex % 6 === 0) {
+            this.playSound(
+              'playChime',
+              1 + (capturedIndex % 7) * 0.1
+            );
+          }
+        }, 400, operationId);
+
+      }, capturedDelay * 35, operationId);
+
       delay++;
     }
 
+    this.updateCounter(false);
+
     const totalDelay = delay * 35 + 500;
-    setTimeout(() => {
-      window.soundEngine.playFanfare();
+
+    this.safeTimeout(() => {
+      this.playSound('playFanfare');
       this.triggerConfetti();
-      this.updateCounter(false);
       this.showToast('เฉลยภาพคำตอบเต็ม!', '👁️');
-    }, totalDelay);
+    }, totalDelay, operationId);
   }
 
-  // Hide all tiles (re-cover)
+  // Hide all tiles
   hideAll() {
-    window.soundEngine.playWhoosh();
+    const operationId = this.cancelPendingOperations();
+
+    this.playSound('playWhoosh');
+
     this.tileStates.fill(false);
 
     const tiles = document.querySelectorAll('.tile-item');
+
     tiles.forEach((tile, i) => {
-      setTimeout(() => {
-        tile.classList.remove('opened', 'opening');
-      }, i * 12);
+      this.safeTimeout(() => {
+        tile.classList.remove('opened', 'opening', 'picking');
+      }, i * 12, operationId);
     });
 
-    setTimeout(() => {
-      this.updateCounter(false); // no bump on hide
+    this.safeTimeout(() => {
+      this.updateCounter(false);
       this.showToast('ปิดแผ่นป้ายทั้งหมดแล้ว', '🙈');
-    }, this.totalTiles * 12 + 60);
+    }, this.totalTiles * 12 + 60, operationId);
   }
 
-  // ── Sound Toggle ──
+  // ══════════════════════════════════════════════════
+  // SOUND
+  // ══════════════════════════════════════════════════
+
   toggleSound() {
+    if (
+      !window.soundEngine ||
+      typeof window.soundEngine.toggle !== 'function'
+    ) {
+      this.showToast('ระบบเสียงยังไม่พร้อมใช้งาน', '⚠️');
+      return;
+    }
+
     const isEnabled = window.soundEngine.toggle();
+
     this._refreshSoundBtn(isEnabled);
+
     this.showToast(
       isEnabled ? 'เปิดเสียงเอฟเฟกต์แล้ว 🔊' : 'ปิดเสียงเอฟเฟกต์แล้ว 🔇',
       isEnabled ? '🔔' : '🔕'
@@ -278,55 +414,72 @@ class AdviceMysteryGame {
   }
 
   _refreshSoundBtn(isEnabled) {
-    const btn      = document.getElementById('btnToggleSound');
-    const iconOn   = document.getElementById('soundIconOn');
-    const iconOff  = document.getElementById('soundIconOff');
-    const label    = document.getElementById('soundLabel');
+    const btn = document.getElementById('btnToggleSound');
+    const iconOn = document.getElementById('soundIconOn');
+    const iconOff = document.getElementById('soundIconOff');
+    const label = document.getElementById('soundLabel');
 
     if (!btn) return;
 
-    if (isEnabled) {
-      iconOn.style.display  = '';
-      iconOff.style.display = 'none';
-      label.textContent = 'เสียง: เปิด';
-      btn.classList.remove('sound-off');
-      btn.classList.add('sound-on');
-    } else {
-      iconOn.style.display  = 'none';
-      iconOff.style.display = '';
-      label.textContent = 'เสียง: ปิด';
-      btn.classList.remove('sound-on');
-      btn.classList.add('sound-off');
+    if (iconOn) iconOn.style.display = isEnabled ? '' : 'none';
+    if (iconOff) iconOff.style.display = isEnabled ? 'none' : '';
+
+    if (label) {
+      label.textContent = isEnabled ? 'เสียง: เปิด' : 'เสียง: ปิด';
     }
+
+    btn.classList.toggle('sound-on', isEnabled);
+    btn.classList.toggle('sound-off', !isEnabled);
   }
 
-  // ── Fullscreen Toggle ──
+  // ══════════════════════════════════════════════════
+  // FULLSCREEN
+  // ══════════════════════════════════════════════════
+
   toggleFullscreen() {
-    const fsExpand   = document.getElementById('fsIconExpand');
+    const fsExpand = document.getElementById('fsIconExpand');
     const fsCompress = document.getElementById('fsIconCompress');
-    const fsLabel    = document.getElementById('fsLabel');
+    const fsLabel = document.getElementById('fsLabel');
 
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => {
-        fsExpand.style.display   = 'none';
-        fsCompress.style.display = '';
-        fsLabel.textContent = 'ออกเต็มจอ';
-        this.showToast('โหมดเต็มหน้าจอ — พร้อมอัดคลิป!', '⛶');
-      }).catch(() => {});
-    } else {
-      document.exitFullscreen && document.exitFullscreen().then(() => {
-        fsExpand.style.display   = '';
-        fsCompress.style.display = 'none';
-        fsLabel.textContent = 'เต็มจอ';
-      });
+      if (!document.documentElement.requestFullscreen) return;
+
+      document.documentElement.requestFullscreen()
+        .then(() => {
+          if (fsExpand) fsExpand.style.display = 'none';
+          if (fsCompress) fsCompress.style.display = '';
+          if (fsLabel) fsLabel.textContent = 'ออกเต็มจอ';
+
+          this.showToast('โหมดเต็มหน้าจอ — พร้อมอัดคลิป!', '⛶');
+        })
+        .catch(err => {
+          console.error('Fullscreen error:', err);
+        });
+
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen()
+        .then(() => {
+          if (fsExpand) fsExpand.style.display = '';
+          if (fsCompress) fsCompress.style.display = 'none';
+          if (fsLabel) fsLabel.textContent = 'เต็มจอ';
+        })
+        .catch(err => {
+          console.error('Exit fullscreen error:', err);
+        });
     }
   }
 
-  // ── Studio Mode Toggle ──
+  // ══════════════════════════════════════════════════
+  // STUDIO MODE
+  // ══════════════════════════════════════════════════
+
   toggleStudioMode() {
     const isStudio = document.body.classList.toggle('studio-mode');
+
     this.showToast(
-      isStudio ? 'โหมดถ่ายคลิป: เมนูถูกซ่อน (hover เพื่อใช้งาน)' : 'ออกจากโหมดถ่ายคลิปแล้ว',
+      isStudio
+        ? 'โหมดถ่ายคลิป: เมนูถูกซ่อน (hover เพื่อใช้งาน)'
+        : 'ออกจากโหมดถ่ายคลิปแล้ว',
       isStudio ? '🎬' : '🎥'
     );
   }
@@ -334,116 +487,250 @@ class AdviceMysteryGame {
   // ══════════════════════════════════════════════════
   // UPLOAD MODAL
   // ══════════════════════════════════════════════════
+
   openUploadModal() {
+    if (!this.uploadModal) return;
+
     this.tempPreviewImage = this.currentAnswerImage;
-    if (this.modalPreviewImg) this.modalPreviewImg.src = this.currentAnswerImage;
+
+    if (this.modalPreviewImg) {
+      this.modalPreviewImg.src = this.currentAnswerImage;
+    }
+
     this.uploadModal.classList.add('active');
   }
 
   closeUploadModal() {
-    this.uploadModal.classList.remove('active');
+    if (this.uploadModal) {
+      this.uploadModal.classList.remove('active');
+    }
   }
+
+  // ══════════════════════════════════════════════════
+  // IMAGE COMPRESSION
+  // ══════════════════════════════════════════════════
 
   async compressImage(file, maxDim = 1920) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
+
       reader.onload = e => {
         const img = new Image();
+
         img.onload = () => {
           let { width, height } = img;
+
           if (width > maxDim || height > maxDim) {
-            if (width > height) { height = Math.round(height * maxDim / width); width = maxDim; }
-            else                { width = Math.round(width * maxDim / height); height = maxDim; }
+            if (width > height) {
+              height = Math.round(height * maxDim / width);
+              width = maxDim;
+            } else {
+              width = Math.round(width * maxDim / height);
+              height = maxDim;
+            }
           }
+
           const canvas = document.createElement('canvas');
-          canvas.width = width; canvas.height = height;
-          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+
+          if (!ctx) {
+            reject(new Error('ไม่สามารถสร้าง Canvas ได้'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+
           resolve(canvas.toDataURL('image/jpeg', 0.9));
         };
-        img.onerror = reject;
+
+        img.onerror = () => {
+          reject(new Error('ไม่สามารถอ่านรูปภาพได้'));
+        };
+
         img.src = e.target.result;
       };
-      reader.onerror = reject;
+
+      reader.onerror = () => {
+        reject(new Error('ไม่สามารถอ่านไฟล์ได้'));
+      };
+
       reader.readAsDataURL(file);
     });
   }
 
+  // ══════════════════════════════════════════════════
+  // HANDLE ANSWER FILE
+  // ══════════════════════════════════════════════════
+
   async handleAnswerFile(file) {
     if (!file) return;
+
+    if (!file.type || !file.type.startsWith('image/')) {
+      this.showToast('กรุณาเลือกไฟล์รูปภาพเท่านั้น', '⚠️');
+      return;
+    }
+
     try {
       this.showToast('กำลังโหลดรูปภาพ...', '⏳');
+
       const dataUrl = await this.compressImage(file);
+
       this.tempPreviewImage = dataUrl;
-      if (this.modalPreviewImg) this.modalPreviewImg.src = dataUrl;
-      this.showToast('โหลดรูปสำเร็จ — กดบันทึกเพื่อเริ่มเล่น', '✅');
+
+      if (this.modalPreviewImg) {
+        this.modalPreviewImg.src = dataUrl;
+      }
+
+      this.showToast(
+        'โหลดรูปสำเร็จ — กดบันทึกเพื่อเริ่มเล่น',
+        '✅'
+      );
+
     } catch (err) {
       console.error(err);
-      alert('ไม่สามารถโหลดรูปภาพได้ กรุณาลองใหม่อีกครั้ง');
+      this.showToast('ไม่สามารถโหลดรูปภาพได้ กรุณาลองใหม่', '❌');
     }
   }
+
+  // ══════════════════════════════════════════════════
+  // SAVE IMAGE
+  // ══════════════════════════════════════════════════
 
   async saveAndApplyImage() {
     if (this.tempPreviewImage) {
-      this.currentAnswerImage  = this.tempPreviewImage;
-      this.answerImage.src     = this.currentAnswerImage;
-      await window.imageStorage.saveMysteryImage(this.currentAnswerImage);
+      this.currentAnswerImage = this.tempPreviewImage;
+
+      if (this.answerImage) {
+        this.answerImage.src = this.currentAnswerImage;
+      }
+
+      try {
+        if (
+          window.imageStorage &&
+          typeof window.imageStorage.saveMysteryImage === 'function'
+        ) {
+          await window.imageStorage.saveMysteryImage(
+            this.currentAnswerImage
+          );
+        }
+      } catch (err) {
+        console.error('ไม่สามารถบันทึกรูปภาพได้:', err);
+        this.showToast('บันทึกรูปภาพไม่สำเร็จ', '❌');
+        return;
+      }
     }
+
     this.closeUploadModal();
     this.resetGame();
+
     this.showToast('บันทึกรูปคำตอบแล้ว พร้อมเล่น!', '✨');
   }
 
+  // ══════════════════════════════════════════════════
+  // RESET DEFAULT IMAGE
+  // ══════════════════════════════════════════════════
+
   async resetDefaultImage() {
-    this.tempPreviewImage    = window.DEFAULT_MYSTERY_IMAGE;
-    this.currentAnswerImage  = window.DEFAULT_MYSTERY_IMAGE;
-    this.answerImage.src     = this.currentAnswerImage;
-    if (this.modalPreviewImg) this.modalPreviewImg.src = this.currentAnswerImage;
-    await window.imageStorage.clearMysteryImage();
+    this.tempPreviewImage = window.DEFAULT_MYSTERY_IMAGE;
+    this.currentAnswerImage = window.DEFAULT_MYSTERY_IMAGE;
+
+    if (this.answerImage) {
+      this.answerImage.src = this.currentAnswerImage;
+    }
+
+    if (this.modalPreviewImg) {
+      this.modalPreviewImg.src = this.currentAnswerImage;
+    }
+
+    try {
+      if (
+        window.imageStorage &&
+        typeof window.imageStorage.clearMysteryImage === 'function'
+      ) {
+        await window.imageStorage.clearMysteryImage();
+      }
+    } catch (err) {
+      console.error('ไม่สามารถคืนค่ารูปภาพได้:', err);
+      this.showToast('คืนค่ารูปภาพไม่สำเร็จ', '❌');
+      return;
+    }
+
     this.closeUploadModal();
     this.resetGame();
+
     this.showToast('คืนค่ารูปตัวอย่างแล้ว', '🔄');
   }
 
   // ══════════════════════════════════════════════════
   // TOAST
   // ══════════════════════════════════════════════════
+
   showToast(text, icon = '✨') {
-    if (this._toastTimeout) clearTimeout(this._toastTimeout);
+    if (!this.toastMsg || !this.toastText || !this.toastIcon) return;
+
+    if (this._toastTimeout) {
+      clearTimeout(this._toastTimeout);
+    }
+
     this.toastText.textContent = text;
     this.toastIcon.textContent = icon;
+
     this.toastMsg.classList.add('show');
-    this._toastTimeout = setTimeout(() => this.toastMsg.classList.remove('show'), 2800);
+
+    this._toastTimeout = setTimeout(() => {
+      this.toastMsg.classList.remove('show');
+      this._toastTimeout = null;
+    }, 2800);
   }
 
   // ══════════════════════════════════════════════════
   // CONFETTI
   // ══════════════════════════════════════════════════
+
   setupConfettiCanvas() {
+    if (!this.confettiCanvas) return;
+
     const resize = () => {
-      this.confettiCanvas.width  = window.innerWidth;
+      this.confettiCanvas.width = window.innerWidth;
       this.confettiCanvas.height = window.innerHeight;
     };
+
     window.addEventListener('resize', resize);
     resize();
   }
 
   triggerConfetti() {
-    const colors = ['#ffcc00','#0056b3','#00d2ff','#ffffff','#ffe600','#ff0055','#22c55e'];
+    if (!this.confettiCtx || !this.confettiCanvas) return;
+
+    const colors = [
+      '#ffcc00',
+      '#0056b3',
+      '#00d2ff',
+      '#ffffff',
+      '#ffe600',
+      '#ff0055',
+      '#22c55e'
+    ];
+
     this.confettiParticles = [];
 
     for (let i = 0; i < 160; i++) {
       this.confettiParticles.push({
-        x:             window.innerWidth  * (0.3 + Math.random() * 0.4),
-        y:             window.innerHeight * (0.3 + Math.random() * 0.3),
-        vx:            (Math.random() * 2 - 1) * 16,
-        vy:            (Math.random() * -14) - 4,
-        size:          Math.random() * 10 + 5,
-        color:         colors[Math.floor(Math.random() * colors.length)],
-        rotation:      Math.random() * 360,
+        x: window.innerWidth * (0.3 + Math.random() * 0.4),
+        y: window.innerHeight * (0.3 + Math.random() * 0.3),
+        vx: (Math.random() * 2 - 1) * 16,
+        vy: (Math.random() * -14) - 4,
+        size: Math.random() * 10 + 5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
         rotationSpeed: (Math.random() * 2 - 1) * 10,
-        gravity:       0.38,
-        drag:          0.978,
-        alpha:         1,
+        gravity: 0.38,
+        drag: 0.978,
+        alpha: 1
       });
     }
 
@@ -454,22 +741,45 @@ class AdviceMysteryGame {
   }
 
   animateConfetti() {
-    if (!this.isConfettiRunning) return;
-    this.confettiCtx.clearRect(0, 0, this.confettiCanvas.width, this.confettiCanvas.height);
+    if (!this.isConfettiRunning || !this.confettiCtx) return;
+
+    this.confettiCtx.clearRect(
+      0,
+      0,
+      this.confettiCanvas.width,
+      this.confettiCanvas.height
+    );
 
     for (let i = this.confettiParticles.length - 1; i >= 0; i--) {
       const p = this.confettiParticles[i];
-      p.x  += p.vx; p.y += p.vy; p.vy += p.gravity;
-      p.vx *= p.drag; p.rotation += p.rotationSpeed; p.alpha -= 0.007;
 
-      if (p.alpha <= 0 || p.y > window.innerHeight) { this.confettiParticles.splice(i, 1); continue; }
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += p.gravity;
+
+      p.vx *= p.drag;
+      p.rotation += p.rotationSpeed;
+      p.alpha -= 0.007;
+
+      if (p.alpha <= 0 || p.y > window.innerHeight) {
+        this.confettiParticles.splice(i, 1);
+        continue;
+      }
 
       this.confettiCtx.save();
+
       this.confettiCtx.translate(p.x, p.y);
       this.confettiCtx.rotate(p.rotation * Math.PI / 180);
       this.confettiCtx.globalAlpha = p.alpha;
-      this.confettiCtx.fillStyle   = p.color;
-      this.confettiCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.55);
+      this.confettiCtx.fillStyle = p.color;
+
+      this.confettiCtx.fillRect(
+        -p.size / 2,
+        -p.size / 2,
+        p.size,
+        p.size * 0.55
+      );
+
       this.confettiCtx.restore();
     }
 
@@ -477,96 +787,188 @@ class AdviceMysteryGame {
       requestAnimationFrame(() => this.animateConfetti());
     } else {
       this.isConfettiRunning = false;
-      this.confettiCtx.clearRect(0, 0, this.confettiCanvas.width, this.confettiCanvas.height);
+
+      this.confettiCtx.clearRect(
+        0,
+        0,
+        this.confettiCanvas.width,
+        this.confettiCanvas.height
+      );
     }
   }
 
   // ══════════════════════════════════════════════════
   // EVENT BINDINGS
   // ══════════════════════════════════════════════════
+
   bindEvents() {
+    const onClick = (id, callback) => {
+      const element = document.getElementById(id);
+
+      if (element) {
+        element.addEventListener('click', callback);
+      }
+    };
+
     // Toolbar
-    document.getElementById('btnManageImages').addEventListener('click', () => this.openUploadModal());
-    document.getElementById('btnResetGame').addEventListener('click',    () => this.resetGame());
-    document.getElementById('btnRandomPick').addEventListener('click',   () => this.pickRandomTile());
-    document.getElementById('btnRevealAll').addEventListener('click',    () => this.revealAll());
-    document.getElementById('btnHideAll').addEventListener('click',      () => this.hideAll());
-    document.getElementById('btnToggleSound').addEventListener('click',  () => this.toggleSound());
-    document.getElementById('btnFullscreen').addEventListener('click',   () => this.toggleFullscreen());
-    document.getElementById('btnStudioMode').addEventListener('click',   () => this.toggleStudioMode());
-    document.getElementById('studioIndicator').addEventListener('click', () => this.toggleStudioMode());
+    onClick('btnManageImages', () => this.openUploadModal());
+    onClick('btnResetGame', () => this.resetGame());
+    onClick('btnRandomPick', () => this.pickRandomTile());
+    onClick('btnRevealAll', () => this.revealAll());
+    onClick('btnHideAll', () => this.hideAll());
+    onClick('btnToggleSound', () => this.toggleSound());
+    onClick('btnFullscreen', () => this.toggleFullscreen());
+    onClick('btnStudioMode', () => this.toggleStudioMode());
+    onClick('studioIndicator', () => this.toggleStudioMode());
 
     // Host soundboard
-    document.getElementById('btnSbCorrect').addEventListener('click', () => {
-      window.soundEngine.playCorrect();
+    onClick('btnSbCorrect', () => {
+      this.playSound('playCorrect');
       this.showToast('ถูกต้อง! Ding-Dong! 🔔', '✅');
     });
-    document.getElementById('btnSbWrong').addEventListener('click', () => {
-      window.soundEngine.playWrong();
+
+    onClick('btnSbWrong', () => {
+      this.playSound('playWrong');
       this.showToast('ตอบผิดครับ! ❌', '🚫');
     });
-    document.getElementById('btnSbDrum').addEventListener('click', () => {
-      window.soundEngine.playDrumroll();
+
+    onClick('btnSbDrum', () => {
+      this.playSound('playDrumroll');
       this.showToast('ลุ้นระทึก... 🥁', '⚡');
     });
 
     // Modal
-    document.getElementById('btnCloseModal').addEventListener('click',        () => this.closeUploadModal());
-    document.getElementById('btnSaveAndClose').addEventListener('click',      () => this.saveAndApplyImage());
-    document.getElementById('btnResetDefaultImage').addEventListener('click', () => this.resetDefaultImage());
-    this.uploadModal.addEventListener('click', e => {
-      if (e.target === this.uploadModal) this.closeUploadModal();
-    });
+    onClick('btnCloseModal', () => this.closeUploadModal());
+    onClick('btnSaveAndClose', () => this.saveAndApplyImage());
+    onClick('btnResetDefaultImage', () => this.resetDefaultImage());
+
+    if (this.uploadModal) {
+      this.uploadModal.addEventListener('click', e => {
+        if (e.target === this.uploadModal) {
+          this.closeUploadModal();
+        }
+      });
+    }
 
     // Image fit radio
-    document.querySelectorAll('input[name="imageFit"]').forEach(r => {
-      r.addEventListener('change', e => {
-        this.answerImage.style.objectFit = e.target.value;
+    document.querySelectorAll('input[name="imageFit"]').forEach(radio => {
+      radio.addEventListener('change', e => {
+        if (this.answerImage) {
+          this.answerImage.style.objectFit = e.target.value;
+        }
+
         localStorage.setItem('advice_image_fit', e.target.value);
       });
     });
 
     // Dropzone
-    const dropzone  = document.getElementById('answerDropzone');
+    const dropzone = document.getElementById('answerDropzone');
     const fileInput = document.getElementById('answerFileInput');
 
-    dropzone.addEventListener('click',     () => fileInput.click());
-    dropzone.addEventListener('dragover',  e  => { e.preventDefault(); dropzone.classList.add('dragover'); });
-    dropzone.addEventListener('dragleave', ()  => dropzone.classList.remove('dragover'));
-    dropzone.addEventListener('drop',      e  => {
-      e.preventDefault(); dropzone.classList.remove('dragover');
-      if (e.dataTransfer.files?.[0]) this.handleAnswerFile(e.dataTransfer.files[0]);
-    });
-    fileInput.addEventListener('change', e => {
-      if (e.target.files?.[0]) this.handleAnswerFile(e.target.files[0]);
-    });
+    if (dropzone && fileInput) {
+      dropzone.addEventListener('click', () => fileInput.click());
+
+      dropzone.addEventListener('dragover', e => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      });
+
+      dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('dragover');
+      });
+
+      dropzone.addEventListener('drop', e => {
+        e.preventDefault();
+
+        dropzone.classList.remove('dragover');
+
+        if (e.dataTransfer.files?.[0]) {
+          this.handleAnswerFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      fileInput.addEventListener('change', e => {
+        if (e.target.files?.[0]) {
+          this.handleAnswerFile(e.target.files[0]);
+        }
+
+        // เลือกไฟล์เดิมซ้ำได้
+        e.target.value = '';
+      });
+    }
 
     // Keyboard shortcuts
     window.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { this.closeUploadModal(); return; }
-      if (this.uploadModal.classList.contains('active')) return;
+      if (e.key === 'Escape') {
+        this.closeUploadModal();
+        return;
+      }
+
+      if (
+        this.uploadModal &&
+        this.uploadModal.classList.contains('active')
+      ) {
+        return;
+      }
+
+      // ไม่ทำงานเมื่อกำลังพิมพ์ข้อความ
+      const target = e.target;
+
+      if (
+        target &&
+        (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable
+        )
+      ) {
+        return;
+      }
 
       const noMod = !e.ctrlKey && !e.metaKey && !e.altKey;
+
       if (!noMod) return;
 
       switch (e.key.toLowerCase()) {
-        case 'f': e.preventDefault(); this.toggleFullscreen();  break;
-        case 'm': e.preventDefault(); this.toggleSound();       break;
-        case 'r': e.preventDefault(); this.resetGame();         break;
-        case 'q': e.preventDefault(); this.pickRandomTile();    break;
-        case 'z': case '1':
+        case 'f':
           e.preventDefault();
-          window.soundEngine.playCorrect();
+          this.toggleFullscreen();
+          break;
+
+        case 'm':
+          e.preventDefault();
+          this.toggleSound();
+          break;
+
+        case 'r':
+          e.preventDefault();
+          this.resetGame();
+          break;
+
+        case 'q':
+          e.preventDefault();
+          this.pickRandomTile();
+          break;
+
+        case 'z':
+        case '1':
+          e.preventDefault();
+          this.playSound('playCorrect');
           this.showToast('ถูกต้อง! Ding-Dong! 🔔', '✅');
           break;
-        case 'x': case '2':
+
+        case 'x':
+        case '2':
           e.preventDefault();
-          window.soundEngine.playWrong();
+          this.playSound('playWrong');
           this.showToast('ตอบผิดครับ! ❌', '🚫');
           break;
-        case 'c': case '3':
+
+        case 'c':
+        case '3':
           e.preventDefault();
-          window.soundEngine.playDrumroll();
+          this.playSound('playDrumroll');
           this.showToast('ลุ้นระทึก... 🥁', '⚡');
           break;
       }
@@ -574,7 +976,10 @@ class AdviceMysteryGame {
   }
 }
 
-// Boot
+// ══════════════════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════════════════
+
 document.addEventListener('DOMContentLoaded', () => {
   window.adviceApp = new AdviceMysteryGame();
 });
