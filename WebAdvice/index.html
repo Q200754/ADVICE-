@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -7,6 +8,7 @@
 
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230056b3'/><text x='16' y='22' text-anchor='middle' fill='%23ffcc00' font-family='sans-serif' font-weight='900' font-size='18'>A</text></svg>">
 
+  <!-- CSS -->
   <link rel="stylesheet" href="./assets/css/style.css">
 </head>
 <body>
@@ -21,12 +23,8 @@
 
   <div class="app-container">
 
-    <!-- ═══════════════════════════════════════
-         HEADER
-         ═══════════════════════════════════════ -->
+    <!-- HEADER -->
     <header class="game-header">
-
-      <!-- Brand -->
       <div class="brand-section">
         <div class="advice-logo-badge">
           <span class="advice-text">ADVICE</span>
@@ -34,13 +32,11 @@
         </div>
       </div>
 
-      <!-- Title -->
       <div class="title-section">
         <h1 class="game-title">🎯 เกมเปิดแผ่นป้ายทายภาพ</h1>
         <div class="title-tagline">ค่อย ๆ เปิดทีละป้าย · ทายรูปภาพปริศนาที่ซ่อนอยู่ด้านหลัง 35 ช่อง</div>
       </div>
 
-      <!-- Counter -->
       <div class="header-status">
         <div class="counter-badge" title="จำนวนป้ายที่เปิดแล้ว">
           <span>เปิดแล้ว</span>
@@ -48,15 +44,11 @@
           <span style="color:rgba(255,255,255,0.5)">/&nbsp;35</span>
         </div>
       </div>
-
     </header>
 
-    <!-- ═══════════════════════════════════════
-         CONTROL TOOLBAR
-         ═══════════════════════════════════════ -->
+    <!-- CONTROL TOOLBAR -->
     <nav class="control-toolbar" aria-label="แถบควบคุมเกม">
 
-      <!-- Group 1: Primary Setup -->
       <button class="btn btn-yellow" id="btnManageImages" title="อัปโหลดรูปภาพคำตอบ 1 รูป">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
@@ -66,7 +58,6 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- Group 2: Game Flow -->
       <button class="btn btn-blue" id="btnResetGame" title="เริ่มเกมใหม่ — ปิดป้ายทั้ง 35 ช่อง (R)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
@@ -104,7 +95,6 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- Group 3: Utility -->
       <button class="btn btn-glass" id="btnToggleSound" title="เปิด/ปิดเสียง (M)">
         <svg id="soundIconOn" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
@@ -136,7 +126,6 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- Group 4: Host Soundboard -->
       <div class="soundboard-group" title="ซาวด์บอร์ดพิธีกร">
         <button class="btn-soundboard btn-sb-correct" id="btnSbCorrect" title="ตอบถูก — Ding-Dong (Z)">
           🔔 ถูกต้อง
@@ -148,28 +137,23 @@
           🥁 ลุ้น!
         </button>
       </div>
-
     </nav>
 
-    <!-- ═══════════════════════════════════════
-         MYSTERY BOARD — 1 image · 35 tiles
-         ═══════════════════════════════════════ -->
+    <!-- MYSTERY BOARD -->
     <main class="board-container">
       <div class="mystery-board" id="mysteryBoard">
 
-        <!-- Layer 1: Answer image (behind) -->
+        <!-- Answer image -->
         <div class="answer-image-layer" id="answerImageLayer">
           <img id="answerImage" src="" alt="ภาพคำตอบปริศนา">
         </div>
 
-        <!-- Layer 2: 35-tile overlay -->
+        <!-- 35 tiles -->
         <div class="tiles-grid" id="tilesGrid">
           <!-- Rendered by JS -->
         </div>
-
       </div>
 
-      <!-- Progress bar — shows how many tiles opened -->
       <div class="progress-bar-wrap">
         <div class="progress-fill" id="progressFill"></div>
       </div>
@@ -188,11 +172,9 @@
       </div>
     </footer>
 
-  </div><!-- /.app-container -->
+  </div>
 
-  <!-- ═══════════════════════════════════════
-       MODAL — Upload Answer Image
-       ═══════════════════════════════════════ -->
+  <!-- MODAL: Upload Answer Image -->
   <div class="modal-overlay" id="uploadModal">
     <div class="modal-content">
 
@@ -208,12 +190,10 @@
       </div>
 
       <div class="modal-body">
-
         <div class="modal-desc">
           เลือกรูป <strong>1 รูป</strong> — ระบบจะนำไปซ่อนไว้ด้านหลังแผ่นป้าย 35 ช่องโดยอัตโนมัติ เปิดทีละป้ายเพื่อทายว่าคือภาพอะไร!
         </div>
 
-        <!-- Dropzone -->
         <div class="upload-dropzone" id="answerDropzone">
           <span class="dropzone-icon">🖼️</span>
           <div class="dropzone-text">ลากรูปมาวางที่นี่ หรือ คลิกเพื่อเลือกไฟล์</div>
@@ -221,12 +201,10 @@
           <input type="file" id="answerFileInput" accept="image/*" style="display:none">
         </div>
 
-        <!-- Preview -->
         <div class="modal-preview-box" id="modalPreviewBox">
           <div class="modal-preview-label">ตัวอย่างรูปภาพคำตอบ:</div>
           <img class="modal-preview-img" id="modalPreviewImg" src="" alt="ตัวอย่างรูปคำตอบ">
 
-          <!-- Fit mode -->
           <div class="fit-options">
             <span>ปรับภาพให้:</span>
             <label>
@@ -239,8 +217,7 @@
             </label>
           </div>
         </div>
-
-      </div><!-- /.modal-body -->
+      </div>
 
       <div class="modal-footer">
         <button class="btn btn-glass" id="btnResetDefaultImage">
@@ -260,7 +237,7 @@
     <span id="toastText">ข้อความแจ้งเตือน</span>
   </div>
 
-  <!-- Scripts -->
+  <!-- JavaScript -->
   <script src="./assets/js/audio.js"></script>
   <script src="./assets/js/presets.js"></script>
   <script src="./assets/js/db.js"></script>
@@ -268,3 +245,4 @@
 
 </body>
 </html>
+v
